@@ -1,8 +1,10 @@
 """Nutrition analysis service."""
 from __future__ import annotations
+import json
 import uuid
 from datetime import datetime, timezone
-from app.services.ai_provider import AIProvider, DemoProvider
+from fastapi import HTTPException
+from app.services.ai_provider import AIProvider, DemoProvider, AIProviderError, AIResponseFormatError
 from app.schemas.schemas import NutritionData, NutritionResponse, AnalysisMetadata, NutritionRequest
 from app.core.logging import get_logger
 
@@ -181,9 +183,10 @@ async def analyze_nutrition(
     system = "You are a nutrition estimation assistant. Provide approximate nutritional values. Always clarify these are estimates, not laboratory measurements."
     try:
         raw = await provider.generate_text(prompt, system)
-        import json
         start = raw.find("{")
         end = raw.rfind("}") + 1
+        if start == -1 or end <= start:
+            raise AIResponseFormatError("AI provider did not return valid JSON for nutrition data.")
         data = json.loads(raw[start:end])
         n_data = {
             "calories": float(data.get("calories", 380)),
@@ -220,6 +223,114 @@ async def analyze_nutrition(
                 created_at=datetime.now(timezone.utc),
             ),
         )
+    except (AIProviderError, HTTPException):
+        raise
+    except json.JSONDecodeError as exc:
+        logger.error(f"Failed to parse nutrition JSON: {exc}")
+        raise AIResponseFormatError("AI nutrition response contained invalid JSON.") from exc
     except Exception as e:
         logger.error(f"Nutrition analysis failed: {e}")
+        raise
+
+
+async def analyze_nutrition_image(
+    image_path: str,
+    serving_size: str,
+    provider: AIProvider,
+) -> NutritionResponse:
+    """Estimate nutrition from an image using the configured provider."""
+    analysis_id = uuid.uuid4().hex
+    is_demo = isinstance(provider, DemoProvider)
+
+    if is_demo:
+        demo = DEMO_NUTRITION["grilled chicken salad"]
+        serving = serving_size if serving_size and serving_size != "1 serving" else demo["serving_size"]
+        score, score_exp = _compute_nutrition_score(demo)
+        nutrition = NutritionData(
+            food_name="Grilled Chicken Salad (Demo)",
+            serving_size=serving,
+            calories=demo["calories"],
+            protein_g=demo["protein_g"],
+            carbs_g=demo["carbs_g"],
+            fat_g=demo["fat_g"],
+            fiber_g=demo["fiber_g"],
+            sugar_g=demo["sugar_g"],
+            sodium_mg=demo["sodium_mg"],
+            nutrition_score=score,
+            score_explanation=score_exp,
+            summary=f"Demo nutrition estimates from image for Grilled Chicken Salad ({serving}).",
+            source="demo_reference_database",
+            uncertainty_note="DEMO MODE: Image analysis was simulated.",
+        )
+        return NutritionResponse(
+            nutrition=nutrition,
+            metadata=AnalysisMetadata(
+                analysis_id=analysis_id,
+                input_type="image",
+                analysis_type="nutrition",
+                provider="demo",
+                is_demo=True,
+                warnings=["DEMO MODE: Image analysis was simulated. Estimates only."],
+                created_at=datetime.now(timezone.utc),
+            ),
+        )
+
+    prompt = (
+        f"Analyze this food image and estimate its nutritional values. "
+        f"Serving size context: {serving_size or '1 serving'}. "
+        "Return a JSON object with keys: food_name (string), calories (kcal, number), "
+        "protein_g (number), carbs_g (number), fat_g (number), fiber_g (number), "
+        "sugar_g (number), sodium_mg (number). "
+        "All values must be numbers. Be clear these are estimates."
+    )
+    try:
+        raw = await provider.analyze_image(image_path, prompt)
+        start = raw.find("{")
+        end = raw.rfind("}") + 1
+        if start == -1 or end <= start:
+            raise AIResponseFormatError("AI provider did not return valid JSON for nutrition data.")
+        data = json.loads(raw[start:end])
+        n_data = {
+            "calories": float(data.get("calories", 380)),
+            "protein_g": float(data.get("protein_g", 18)),
+            "carbs_g": float(data.get("carbs_g", 45)),
+            "fat_g": float(data.get("fat_g", 14)),
+            "fiber_g": float(data.get("fiber_g", 4)),
+            "sugar_g": float(data.get("sugar_g", 6)),
+            "sodium_mg": float(data.get("sodium_mg", 520)),
+        }
+        score, score_exp = _compute_nutrition_score(n_data)
+        food_name = data.get("food_name", "Identified Food")
+        actual_serving = serving_size or data.get("serving_size", "1 serving")
+        nutrition = NutritionData(
+            food_name=food_name,
+            serving_size=actual_serving,
+            **n_data,
+            nutrition_score=score,
+            score_explanation=score_exp,
+            summary=f"AI-estimated nutrition from image for {food_name} ({actual_serving}).",
+            source=f"ai_estimate:{provider.name}",
+            uncertainty_note=(
+                "Values are AI-generated visual estimates. Actual nutrition varies by ingredients and preparation."
+            ),
+        )
+        return NutritionResponse(
+            nutrition=nutrition,
+            metadata=AnalysisMetadata(
+                analysis_id=analysis_id,
+                input_type="image",
+                analysis_type="nutrition",
+                provider=provider.name,
+                is_demo=False,
+                warnings=["AI visual estimates only. Not laboratory-verified."],
+                created_at=datetime.now(timezone.utc),
+            ),
+        )
+    except (AIProviderError, HTTPException):
+        raise
+    except json.JSONDecodeError as exc:
+        logger.error(f"Failed to parse nutrition JSON: {exc}")
+        raise AIResponseFormatError("AI nutrition response contained invalid JSON.") from exc
+    except Exception as e:
+        logger.error(f"Nutrition image analysis failed: {e}")
         raise

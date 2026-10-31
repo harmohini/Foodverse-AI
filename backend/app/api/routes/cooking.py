@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.database.connection import get_db
 from app.database.models import AnalysisHistory, RecipeRecord
 from app.services.cooking import generate_recipe, chat_about_recipe
-from app.services.ai_provider import get_provider
+from app.services.ai_provider import get_provider, AIProviderError
 from app.schemas.schemas import CookingRequest, CookingChatRequest, Recipe, CookingChatResponse
 from app.core.logging import get_logger
 
@@ -21,6 +21,8 @@ async def generate(
     provider = get_provider()
     try:
         recipe = await generate_recipe(request, provider)
+    except (AIProviderError, HTTPException):
+        raise
     except Exception as e:
         logger.error(f"Recipe generation error: {e}")
         raise HTTPException(status_code=500, detail=f"Recipe generation failed: {e}")
@@ -62,6 +64,8 @@ async def chat(
     provider = get_provider()
     try:
         return await chat_about_recipe(request, provider)
+    except (AIProviderError, HTTPException):
+        raise
     except Exception as e:
         logger.error(f"Cooking chat error: {e}")
         raise HTTPException(status_code=500, detail=f"Chat failed: {e}")

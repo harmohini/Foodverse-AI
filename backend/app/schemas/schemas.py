@@ -34,6 +34,10 @@ class FoodRecognitionResult(BaseModel):
     metadata: AnalysisMetadata
 
 
+class FoodRecognitionTextRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=2000)
+
+
 # ─── Nutrition ─────────────────────────────────────────────────────────────
 
 class NutritionData(BaseModel):
@@ -82,6 +86,11 @@ class FreshnessResult(BaseModel):
     metadata: AnalysisMetadata
 
 
+class FreshnessTextRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=2000)
+    food_category: str = Field(default="", max_length=255)
+
+
 # ─── Hygiene ───────────────────────────────────────────────────────────────
 
 class HygieneIndicator(BaseModel):
@@ -100,6 +109,10 @@ class HygieneReport(BaseModel):
     corrective_actions: list[str] = []
     disclaimer: str
     metadata: AnalysisMetadata
+
+
+class HygieneTextRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=2000)
 
 
 # ─── Cooking ───────────────────────────────────────────────────────────────

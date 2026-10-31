@@ -3,7 +3,10 @@ from __future__ import annotations
 import uuid
 import json
 from datetime import datetime, timezone
-from app.services.ai_provider import AIProvider, DemoProvider
+from fastapi import HTTPException
+from app.services.ai_provider import (
+    AIProvider, DemoProvider, AIProviderError, AIResponseFormatError
+)
 from app.schemas.schemas import (
     MealPlanRequest, MealPlanResponse, DayPlan, MealItem, ShoppingItem
 )
@@ -141,12 +144,14 @@ async def generate_meal_plan(
         raw = await provider.generate_text(prompt, system)
         start = raw.find("{")
         end = raw.rfind("}") + 1
+        if start == -1 or end <= start:
+            raise AIResponseFormatError("AI provider did not return valid JSON for meal plan.")
         data = json.loads(raw[start:end])
         days_out = [
             DayPlan(
                 day=d.get("day", i+1),
                 date_label=d.get("date_label", f"Day {i+1}"),
-                meals=[MealItem(**m) for m in d.get("meals", [])],
+                meals=[MealItem(**m) if isinstance(m, dict) else MealItem(meal_type="meal", name=str(m), description="") for m in d.get("meals", [])],
                 daily_estimated_calories=d.get("daily_estimated_calories"),
             )
             for i, d in enumerate(data.get("days", []))
@@ -155,11 +160,16 @@ async def generate_meal_plan(
             plan_id=plan_id,
             title=data.get("title", f"{days_count}-Day Meal Plan"),
             days=days_out,
-            shopping_list=[ShoppingItem(**s) for s in data.get("shopping_list", [])],
+            shopping_list=[ShoppingItem(**s) if isinstance(s, dict) else ShoppingItem(ingredient=str(s), quantity="1", category="other") for s in data.get("shopping_list", [])],
             allergy_reminder=ALLERGY_REMINDER,
             is_demo=False,
             created_at=datetime.now(timezone.utc),
         )
+    except (AIProviderError, HTTPException):
+        raise
+    except json.JSONDecodeError as exc:
+        logger.error(f"Failed to parse meal plan JSON: {exc}")
+        raise AIResponseFormatError("AI meal plan response contained invalid JSON.") from exc
     except Exception as e:
         logger.error(f"Meal plan generation failed: {e}")
         raise

@@ -21,6 +21,7 @@ const ANALYSIS_TYPE_LABELS: Record<string, string> = {
   freshness: 'Freshness Check',
   hygiene: 'Hygiene Monitor',
   cooking: 'Recipe Generated',
+  meal_plan: 'Meal Plan Generated',
 };
 
 export default function DashboardPage() {

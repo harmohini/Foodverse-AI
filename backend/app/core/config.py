@@ -4,6 +4,8 @@ from pathlib import Path
 from pydantic_settings import BaseSettings
 from pydantic import Field
 
+BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
+
 
 class Settings(BaseSettings):
     # App
@@ -12,8 +14,18 @@ class Settings(BaseSettings):
     debug: bool = True
     version: str = "1.0.0"
 
-    # AI Provider
-    ai_provider: str = "demo"  # "openai" or "demo"
+    # AI Provider: "gemini" (primary), "openai" (fallback), "demo"
+    ai_provider: str = "gemini"
+
+    # Google Gemini API (Primary AI provider)
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.8-flash"
+    gemini_vision_model: str = "gemini-3.8-flash"
+    gemini_text_model: str = "gemini-3.8-flash"
+    gemini_timeout_seconds: float = 90.0
+    gemini_connect_timeout_seconds: float = 10.0
+
+    # OpenAI-compatible API (Optional fallback provider)
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
     openai_vision_model: str = "gpt-4o"
@@ -46,13 +58,29 @@ class Settings(BaseSettings):
 
     @property
     def is_demo_mode(self) -> bool:
-        return self.ai_provider == "demo" or not self.openai_api_key
+        return self.ai_provider == "demo"
 
-    model_config = {"env_file": ".env", "extra": "ignore"}
+    @property
+    def resolved_database_url(self) -> str:
+        if self.database_url.startswith("sqlite:///./"):
+            rel_part = self.database_url[len("sqlite:///./"):]
+            abs_path = (BACKEND_DIR / rel_part).resolve()
+            abs_path.parent.mkdir(parents=True, exist_ok=True)
+            return f"sqlite:///{abs_path}"
+        return self.database_url
+
+    @property
+    def resolved_upload_dir(self) -> Path:
+        p = Path(self.upload_dir)
+        if not p.is_absolute():
+            p = (BACKEND_DIR / p).resolve()
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    model_config = {"env_file": str(BACKEND_DIR / ".env"), "extra": "ignore"}
 
 
 settings = Settings()
 
-# Ensure upload directory exists
-Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
-Path("./data").mkdir(parents=True, exist_ok=True)
+# Ensure upload and data directories exist
+settings.resolved_upload_dir.mkdir(parents=True, exist_ok=True)

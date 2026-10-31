@@ -2,6 +2,11 @@
 
 A complete, functional prototype that analyses food images, videos, and text to deliver nutrition estimates, freshness assessments, restaurant hygiene observations, recipe generation, and personalised meal planning.
 
+## 🎥 Project Demo Video
+
+Watch the complete demonstration of FoodVerse AI in action:
+👉 **[Watch FoodVerse AI Demo Video on Google Drive](https://drive.google.com/file/d/1zPttiYTebIy7EDBSIKwYOPWtC5m6AFhw/view?usp=sharing)**
+
 ## Architecture
 
 ```
@@ -14,7 +19,7 @@ FoodVerse AI
 │   │   ├── database/           # SQLAlchemy models & connection
 │   │   ├── schemas/            # Pydantic request/response models
 │   │   └── services/           # Business logic & AI provider adapters
-│   ├── tests/                  # Pytest test suite (21 tests)
+│   ├── tests/                  # Pytest test suite (49 tests)
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/                   # React TypeScript frontend
@@ -81,11 +86,15 @@ Frontend will start at **http://localhost:5173**
 
 | Variable | Default | Description |
 |---|---|---|
-| `AI_PROVIDER` | `demo` | Set to `openai` to enable live AI |
-| `OPENAI_API_KEY` | *(empty)* | Your OpenAI API key |
+| `AI_PROVIDER` | `gemini` | AI provider: `gemini` (primary), `openai` (optional fallback), or `demo` |
+| `GEMINI_API_KEY` | *(empty)* | Your Google Gemini API key (via Google AI Studio) |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | Primary Gemini model for multimodal vision & text generation |
+| `GEMINI_VISION_MODEL` | `gemini-2.5-flash` | Multimodal model for food/freshness/hygiene image analysis |
+| `GEMINI_TEXT_MODEL` | `gemini-2.5-flash` | Text model for nutrition, recipe cooking, and meal planning |
+| `OPENAI_API_KEY` | *(empty)* | Optional OpenAI API key (for fallback provider) |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible base URL |
-| `OPENAI_VISION_MODEL` | `gpt-4o` | Vision model for food/freshness/hygiene |
-| `OPENAI_TEXT_MODEL` | `gpt-4o` | Text model for nutrition/cooking/meal plans |
+| `OPENAI_VISION_MODEL` | `gpt-4o` | Vision model for OpenAI fallback |
+| `OPENAI_TEXT_MODEL` | `gpt-4o` | Text model for OpenAI fallback |
 | `DATABASE_URL` | `sqlite:///./data/foodverse.db` | SQLite DB path |
 | `MAX_IMAGE_SIZE_MB` | `10` | Max image upload size |
 | `MAX_VIDEO_SIZE_MB` | `100` | Max video upload size |
@@ -99,7 +108,7 @@ source .venv/bin/activate
 python3 -m pytest tests/ -v
 ```
 
-**Expected result:** 21 tests passing, ~1 second.
+**Expected result:** 49 tests passing, ~2 seconds.
 
 ## Building for Production
 
@@ -114,25 +123,25 @@ npm run type-check
 
 ## Demo Mode vs Live AI
 
-The app runs in **Demo Mode** by default — no API keys required.
+The app runs in **Demo Mode** by default when `AI_PROVIDER=demo` — no API keys required. Setting `AI_PROVIDER=gemini` and providing a valid `GEMINI_API_KEY` enables live Gemini inference.
 
-| Feature | Demo Mode | Live AI Mode |
+| Feature | Demo Mode | Live AI Mode (Google Gemini API) |
 |---|---|---|
-| Food Recognition | Sample result (Grilled Chicken Salad) | Real vision model inference |
-| Nutrition Analysis | Reference database values | AI-generated estimates |
-| Freshness Check | Sample assessment | Real vision model |
-| Hygiene Monitor | Sample report | Frame-by-frame vision analysis |
-| Smart Cooking | Pre-written recipe | LLM-generated recipe |
-| Meal Planner | 3-day demo plan | LLM-generated personalised plan |
+| Food Recognition | Sample result (Grilled Chicken Salad) | Real Gemini multimodal inference (image & text) |
+| Nutrition Analysis | Reference database values | AI-generated estimates (text & image) |
+| Freshness Check | Sample assessment | Real vision & text freshness assessment |
+| Hygiene Monitor | Sample report | Frame-by-frame vision & text observations |
+| Smart Cooking | Pre-written recipe | LLM-generated recipe with interactive safety chat |
+| Meal Planner | 3-day demo plan | LLM-generated personalised plan with shopping list |
 
-A **Demo Mode** banner is shown on every result when running without a real provider.
+A **Demo Mode** banner is shown on every result when running in demo mode.
 
 ## Six Core Features
 
-1. **Food Recognition** — Upload JPEG/PNG/WebP images; identifies dish, ingredients, and serving size.
-2. **Nutrition Analysis** — Estimates calories, macros, fiber, sodium; visual score ring and macro pie chart.
-3. **Freshness Check** — Visual assessment of Fresh / Moderately Fresh / Possible Spoilage with safety disclaimers.
-4. **Hygiene Monitor** — Video frame extraction and hygiene indicator analysis with a full evidence report.
+1. **Food Recognition** — Supports both image uploads (JPEG/PNG/WebP) and text descriptions; identifies dish, ingredients, and serving size.
+2. **Nutrition Analysis** — Estimates calories, macros, fiber, sodium; visual score ring and macro pie chart (supports text requests and image estimation).
+3. **Freshness Check** — Visual & text assessment of Fresh / Moderately Fresh / Possible Spoilage with safety disclaimers.
+4. **Hygiene Monitor** — Image/video frame extraction and text observation analysis with a full evidence report.
 5. **Smart Cooking** — Recipe generation with step-by-step instructions, food safety notes, and chat follow-ups.
 6. **Meal Planner** — 1–7-day plans with shopping lists; respects allergies and dietary exclusions.
 
@@ -141,11 +150,16 @@ A **Demo Mode** banner is shown on every result when running without a real prov
 ```
 GET  /api/health
 GET  /api/health/ready
+GET  /api/health/provider
 
 POST /api/v1/food/recognize
+POST /api/v1/food/recognize-text
 POST /api/v1/nutrition/analyze
+POST /api/v1/nutrition/analyze-image
 POST /api/v1/freshness/analyze
+POST /api/v1/freshness/analyze-text
 POST /api/v1/hygiene/analyze
+POST /api/v1/hygiene/analyze-text
 POST /api/v1/cooking/generate
 POST /api/v1/cooking/chat
 POST /api/v1/meal-plans/generate
@@ -184,4 +198,3 @@ For production use:
 - Set `DEBUG=false` and `APP_ENV=production`.
 - Serve the frontend build from a CDN or static host.
 - Run the backend behind Nginx or a reverse proxy with TLS.
-# Foodverse-AI

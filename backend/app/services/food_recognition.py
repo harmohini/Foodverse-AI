@@ -3,7 +3,9 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
-from app.services.ai_provider import AIProvider, DemoProvider
+import json
+from fastapi import HTTPException
+from app.services.ai_provider import AIProvider, DemoProvider, AIProviderError, AIResponseFormatError
 from app.schemas.schemas import (
     FoodRecognitionResult, Ingredient, AnalysisMetadata
 )
@@ -67,7 +69,7 @@ async def recognize_food(
         demo_data = DEMO_FOODS["default"]
         warnings = [
             "DEMO MODE: No real image analysis was performed.",
-            "To enable live image recognition, configure AI_PROVIDER=openai and a valid OPENAI_API_KEY.",
+            "To enable live image recognition, configure AI_PROVIDER=gemini and a valid GEMINI_API_KEY.",
         ]
         return FoodRecognitionResult(
             dish_name=demo_data["dish_name"],
@@ -97,16 +99,16 @@ async def recognize_food(
     )
     try:
         raw = await provider.analyze_image(image_path, prompt)
-        import json
-        # Extract JSON from response
         start = raw.find("{")
         end = raw.rfind("}") + 1
+        if start == -1 or end <= start:
+            raise AIResponseFormatError("AI model did not return a valid JSON object.")
         data = json.loads(raw[start:end])
         return FoodRecognitionResult(
             dish_name=data.get("dish_name", "Unknown food"),
             confidence=data.get("confidence"),
             description=data.get("description", ""),
-            ingredients=[Ingredient(**i) if isinstance(i, dict) else Ingredient(name=i) for i in data.get("ingredients", [])],
+            ingredients=[Ingredient(**i) if isinstance(i, dict) else Ingredient(name=str(i)) for i in data.get("ingredients", [])],
             cuisine=data.get("cuisine"),
             serving_size_estimate=data.get("serving_size_estimate", "1 serving"),
             metadata=AnalysisMetadata(
@@ -119,6 +121,92 @@ async def recognize_food(
                 created_at=datetime.now(timezone.utc),
             ),
         )
+    except (AIProviderError, HTTPException):
+        raise
+    except json.JSONDecodeError as exc:
+        logger.error(f"Failed to parse food recognition JSON: {exc}")
+        raise AIResponseFormatError("AI vision response contained invalid JSON.") from exc
     except Exception as e:
         logger.error(f"Food recognition failed: {e}")
+        raise
+
+
+async def recognize_food_text(
+    text: str,
+    provider: AIProvider,
+) -> FoodRecognitionResult:
+    """Recognize food from a text description using the configured provider."""
+    analysis_id = uuid.uuid4().hex
+    is_demo = isinstance(provider, DemoProvider)
+
+    if is_demo:
+        query_lower = text.lower()
+        demo_key = "default"
+        for k in DEMO_FOODS:
+            if k in query_lower:
+                demo_key = k
+                break
+        demo_data = DEMO_FOODS[demo_key]
+        warnings = [
+            "DEMO MODE: No live AI inference was performed.",
+            "To enable live recognition, configure AI_PROVIDER=gemini and a valid GEMINI_API_KEY.",
+        ]
+        return FoodRecognitionResult(
+            dish_name=demo_data["dish_name"],
+            confidence=demo_data["confidence"],
+            description=f"[Demo Text Analysis] {demo_data['description']}",
+            ingredients=[Ingredient(**i) for i in demo_data["ingredients"]],
+            cuisine=demo_data["cuisine"],
+            serving_size_estimate=demo_data["serving_size_estimate"],
+            metadata=AnalysisMetadata(
+                analysis_id=analysis_id,
+                input_type="text",
+                analysis_type="food_recognition",
+                provider="demo",
+                is_demo=True,
+                warnings=warnings,
+                created_at=datetime.now(timezone.utc),
+            ),
+        )
+
+    prompt = (
+        f"Analyze this food description: \"{text}\". "
+        "Return a JSON object with these keys: "
+        "dish_name (string), confidence (0-1 float), description (string, 1-2 sentences), "
+        "ingredients (array of {name, confidence}), cuisine (string), "
+        "serving_size_estimate (string like '1 bowl ~350g'). "
+        "Be honest if you are uncertain. Do not fabricate ingredients."
+    )
+    system = "You are FoodVerse AI, a helpful food analysis assistant. Analyze food descriptions accurately."
+    try:
+        raw = await provider.generate_text(prompt, system=system)
+        start = raw.find("{")
+        end = raw.rfind("}") + 1
+        if start == -1 or end <= start:
+            raise AIResponseFormatError("AI model did not return a valid JSON object.")
+        data = json.loads(raw[start:end])
+        return FoodRecognitionResult(
+            dish_name=data.get("dish_name", "Unknown food"),
+            confidence=data.get("confidence"),
+            description=data.get("description", ""),
+            ingredients=[Ingredient(**i) if isinstance(i, dict) else Ingredient(name=str(i)) for i in data.get("ingredients", [])],
+            cuisine=data.get("cuisine"),
+            serving_size_estimate=data.get("serving_size_estimate", "1 serving"),
+            metadata=AnalysisMetadata(
+                analysis_id=analysis_id,
+                input_type="text",
+                analysis_type="food_recognition",
+                provider=provider.name,
+                is_demo=False,
+                warnings=["Results are AI estimates. Confidence scores are model-generated."],
+                created_at=datetime.now(timezone.utc),
+            ),
+        )
+    except (AIProviderError, HTTPException):
+        raise
+    except json.JSONDecodeError as exc:
+        logger.error(f"Failed to parse food recognition JSON: {exc}")
+        raise AIResponseFormatError("AI response contained invalid JSON.") from exc
+    except Exception as e:
+        logger.error(f"Food recognition from text failed: {e}")
         raise

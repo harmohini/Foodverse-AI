@@ -74,15 +74,16 @@ export default function HygienePage() {
     <div className="max-w-4xl mx-auto space-y-6 fade-in">
       <SectionHeader
         title="Restaurant Hygiene Monitor"
-        subtitle="Upload a kitchen or food-service video to identify visible hygiene indicators."
+        subtitle="Upload a kitchen or food-service photo or video to identify visible hygiene indicators."
       />
 
       {/* Upload */}
       <div className="card space-y-4">
-        <h3 className="font-semibold text-charcoal-900">Upload Kitchen Video</h3>
+        <h3 className="font-semibold text-charcoal-900">Upload Kitchen Media</h3>
         <VideoUploadZone
           onFile={handleFile}
           preview={preview}
+          isVideo={file ? file.type.startsWith('video') : true}
           onError={(msg) => { setError(msg); toast.error(msg); }}
         />
         {error && <ErrorAlert message={error} />}
@@ -93,7 +94,7 @@ export default function HygienePage() {
           className="btn-primary"
         >
           <Eye className="w-4 h-4" />
-          {loading ? 'Analysing Video…' : 'Generate Hygiene Report'}
+          {loading ? 'Analysing Media…' : 'Generate Hygiene Report'}
         </button>
       </div>
 

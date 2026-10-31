@@ -1,8 +1,10 @@
 """Freshness detection service."""
 from __future__ import annotations
+import json
 import uuid
 from datetime import datetime, timezone
-from app.services.ai_provider import AIProvider, DemoProvider
+from fastapi import HTTPException
+from app.services.ai_provider import AIProvider, DemoProvider, AIProviderError, AIResponseFormatError
 from app.schemas.schemas import FreshnessResult, FreshnessObservation, AnalysisMetadata
 from app.core.logging import get_logger
 
@@ -110,15 +112,16 @@ async def analyze_freshness(
     )
     try:
         raw = await provider.analyze_image(image_path, prompt)
-        import json
         start = raw.find("{")
         end = raw.rfind("}") + 1
+        if start == -1 or end <= start:
+            raise AIResponseFormatError("AI vision provider did not return valid JSON for freshness analysis.")
         data = json.loads(raw[start:end])
         return FreshnessResult(
             food_category=food_category or "Unknown",
             status=data.get("status", "Unable to assess"),
             confidence=data.get("confidence"),
-            observations=[FreshnessObservation(**o) for o in data.get("observations", [])],
+            observations=[FreshnessObservation(**o) if isinstance(o, dict) else FreshnessObservation(characteristic="General", observation=str(o)) for o in data.get("observations", [])],
             next_steps=data.get("next_steps", []),
             safety_disclaimer=SAFETY_DISCLAIMER,
             metadata=AnalysisMetadata(
@@ -134,6 +137,91 @@ async def analyze_freshness(
                 created_at=datetime.now(timezone.utc),
             ),
         )
+    except (AIProviderError, HTTPException):
+        raise
+    except json.JSONDecodeError as exc:
+        logger.error(f"Failed to parse freshness JSON: {exc}")
+        raise AIResponseFormatError("AI freshness response contained invalid JSON.") from exc
     except Exception as e:
         logger.error(f"Freshness analysis failed: {e}")
+        raise
+
+
+async def analyze_freshness_text(
+    text: str,
+    food_category: str,
+    provider: AIProvider,
+) -> FreshnessResult:
+    """Analyze food freshness from a text description."""
+    analysis_id = uuid.uuid4().hex
+    is_demo = isinstance(provider, DemoProvider)
+
+    if is_demo:
+        demo = DEMO_RESULTS["moderate"]
+        warnings = [
+            "DEMO MODE: No real AI analysis was performed.",
+            "This is a sample result for demonstration purposes only.",
+            SAFETY_DISCLAIMER,
+        ]
+        return FreshnessResult(
+            food_category=food_category or "General produce",
+            status=demo["status"],
+            confidence=demo["confidence"],
+            observations=[FreshnessObservation(**o) for o in demo["observations"]],
+            next_steps=demo["next_steps"],
+            safety_disclaimer=SAFETY_DISCLAIMER,
+            metadata=AnalysisMetadata(
+                analysis_id=analysis_id,
+                input_type="text",
+                analysis_type="freshness",
+                provider="demo",
+                is_demo=True,
+                warnings=warnings,
+                created_at=datetime.now(timezone.utc),
+            ),
+        )
+
+    prompt = (
+        f"Analyze this description of {food_category or 'food'} for freshness and spoilage indicators: \"{text}\". "
+        "Return a JSON object with: status (one of 'Fresh', 'Moderately Fresh', 'Possible Spoilage'), "
+        "confidence (0-1), observations (array of {characteristic, observation, severity: 'normal'|'mild'|'concerning'}), "
+        "next_steps (array of strings). "
+        "Be conservative and honest. Note this is based on text description. "
+        "Do not claim to detect pathogens or guarantee food safety."
+    )
+    system = "You are FoodVerse AI, a food safety and freshness assistant. Assess reported food condition objectively."
+    try:
+        raw = await provider.generate_text(prompt, system=system)
+        start = raw.find("{")
+        end = raw.rfind("}") + 1
+        if start == -1 or end <= start:
+            raise AIResponseFormatError("AI provider did not return valid JSON for freshness analysis.")
+        data = json.loads(raw[start:end])
+        return FreshnessResult(
+            food_category=food_category or "Unknown",
+            status=data.get("status", "Unable to assess"),
+            confidence=data.get("confidence"),
+            observations=[FreshnessObservation(**o) if isinstance(o, dict) else FreshnessObservation(characteristic="General", observation=str(o)) for o in data.get("observations", [])],
+            next_steps=data.get("next_steps", []),
+            safety_disclaimer=SAFETY_DISCLAIMER,
+            metadata=AnalysisMetadata(
+                analysis_id=analysis_id,
+                input_type="text",
+                analysis_type="freshness",
+                provider=provider.name,
+                is_demo=False,
+                warnings=[
+                    "Assessment based on text description.",
+                    SAFETY_DISCLAIMER,
+                ],
+                created_at=datetime.now(timezone.utc),
+            ),
+        )
+    except (AIProviderError, HTTPException):
+        raise
+    except json.JSONDecodeError as exc:
+        logger.error(f"Failed to parse freshness JSON: {exc}")
+        raise AIResponseFormatError("AI freshness response contained invalid JSON.") from exc
+    except Exception as e:
+        logger.error(f"Freshness text analysis failed: {e}")
         raise

@@ -13,6 +13,7 @@ const TYPE_BADGES: Record<string, string> = {
   freshness: 'bg-emerald-50 text-emerald-600',
   hygiene: 'bg-blue-50 text-blue-600',
   cooking: 'bg-purple-50 text-purple-600',
+  meal_plan: 'bg-rose-50 text-rose-600',
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -21,6 +22,7 @@ const TYPE_LABELS: Record<string, string> = {
   freshness: 'Freshness',
   hygiene: 'Hygiene',
   cooking: 'Cooking',
+  meal_plan: 'Meal Plan',
 };
 
 export default function HistoryPage() {

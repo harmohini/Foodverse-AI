@@ -38,7 +38,7 @@ def extract_frames(video_path: str, max_frames: int = 8) -> list[str]:
     step = max(1, total_frames // max_frames)
     frame_indices = list(range(0, min(total_frames, step * max_frames), step))[:max_frames]
 
-    frame_dir = Path(settings.upload_dir) / "frames"
+    frame_dir = settings.resolved_upload_dir / "frames"
     frame_dir.mkdir(parents=True, exist_ok=True)
 
     for idx in frame_indices:

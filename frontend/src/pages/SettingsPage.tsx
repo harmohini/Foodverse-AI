@@ -92,7 +92,7 @@ export default function SettingsPage() {
         ) : (
           <div className="error-box">
             <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-            <span>Backend is not reachable. Ensure it is running on port 8001.</span>
+            <span>Backend is not reachable. Ensure it is running on port 8000.</span>
           </div>
         )}
       </div>

@@ -80,10 +80,11 @@ export function ImageUploadZone({
 interface VideoUploadZoneProps {
   onFile: (file: File) => void;
   preview?: string;
+  isVideo?: boolean;
   onError?: (msg: string) => void;
 }
 
-export function VideoUploadZone({ onFile, preview, onError }: VideoUploadZoneProps) {
+export function VideoUploadZone({ onFile, preview, isVideo = true, onError }: VideoUploadZoneProps) {
   const onDrop = useCallback(
     (accepted: File[], rejected: FileRejection[]) => {
       if (rejected.length > 0) {
@@ -98,7 +99,14 @@ export function VideoUploadZone({ onFile, preview, onError }: VideoUploadZonePro
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: { 'video/mp4': ['.mp4'], 'video/quicktime': ['.mov'], 'video/webm': ['.webm'] },
+    accept: {
+      'video/mp4': ['.mp4'],
+      'video/quicktime': ['.mov'],
+      'video/webm': ['.webm'],
+      'image/jpeg': ['.jpg', '.jpeg'],
+      'image/png': ['.png'],
+      'image/webp': ['.webp'],
+    },
     maxFiles: 1,
     maxSize: 100 * 1024 * 1024,
   });
@@ -115,7 +123,11 @@ export function VideoUploadZone({ onFile, preview, onError }: VideoUploadZonePro
       <input {...getInputProps()} />
       {preview ? (
         <div className="w-full flex flex-col items-center gap-3">
-          <video src={preview} controls className="max-h-48 rounded-xl shadow-card" />
+          {isVideo ? (
+            <video src={preview} controls className="max-h-48 rounded-xl shadow-card" />
+          ) : (
+            <img src={preview} alt="Kitchen preview" className="max-h-48 rounded-xl object-cover shadow-card" />
+          )}
           <p className="text-sm text-charcoal-100">Click or drop to replace</p>
         </div>
       ) : (
@@ -123,13 +135,13 @@ export function VideoUploadZone({ onFile, preview, onError }: VideoUploadZonePro
           <div className="w-14 h-14 rounded-2xl bg-forest-50 flex items-center justify-center mb-4">
             <Video className="w-7 h-7 text-forest-500" />
           </div>
-          <p className="font-semibold text-charcoal-900">Drop your kitchen video here</p>
+          <p className="font-semibold text-charcoal-900">Drop your kitchen photo or video here</p>
           <p className="text-sm text-charcoal-100 mt-1">
             or <span className="text-forest-500 font-medium">browse files</span>
           </p>
           <p className="text-xs text-charcoal-100 mt-3 flex items-center gap-1.5">
             <AlertCircle className="w-3.5 h-3.5" />
-            MP4, MOV, WebM · max 100 MB
+            MP4, MOV, WebM, JPEG, PNG · max 100 MB
           </p>
         </>
       )}

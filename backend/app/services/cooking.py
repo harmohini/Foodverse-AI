@@ -3,7 +3,10 @@ from __future__ import annotations
 import uuid
 import json
 from datetime import datetime, timezone
-from app.services.ai_provider import AIProvider, DemoProvider
+from fastapi import HTTPException
+from app.services.ai_provider import (
+    AIProvider, DemoProvider, AIProviderError, AIResponseFormatError
+)
 from app.schemas.schemas import (
     Recipe, RecipeIngredient, RecipeStep, CookingRequest,
     CookingChatRequest, CookingChatResponse, NutritionData
@@ -114,11 +117,13 @@ async def generate_recipe(
         raw = await provider.generate_text(prompt, system)
         start = raw.find("{")
         end = raw.rfind("}") + 1
+        if start == -1 or end <= start:
+            raise AIResponseFormatError("AI provider did not return valid JSON for recipe generation.")
         data = json.loads(raw[start:end])
         en = data.get("estimated_nutrition", {})
         nutrition = NutritionData(
             food_name=en.get("food_name", request.dish_name),
-            serving_size=en.get("serving_size", f"1 serving"),
+            serving_size=en.get("serving_size", "1 serving"),
             calories=en.get("calories"),
             protein_g=en.get("protein_g"),
             carbs_g=en.get("carbs_g"),
@@ -146,6 +151,11 @@ async def generate_recipe(
             estimated_nutrition=nutrition,
             is_demo=False,
         )
+    except (AIProviderError, HTTPException):
+        raise
+    except json.JSONDecodeError as exc:
+        logger.error(f"Failed to parse recipe JSON: {exc}")
+        raise AIResponseFormatError("AI recipe response contained invalid JSON.") from exc
     except Exception as e:
         logger.error(f"Recipe generation failed: {e}")
         raise
@@ -181,6 +191,8 @@ async def chat_about_recipe(
     try:
         response = await provider.generate_text(prompt, system)
         return CookingChatResponse(message=response, is_demo=False)
+    except (AIProviderError, HTTPException):
+        raise
     except Exception as e:
         logger.error(f"Cooking chat failed: {e}")
         raise

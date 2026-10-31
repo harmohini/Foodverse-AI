@@ -3,9 +3,9 @@ import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database.connection import get_db
-from app.database.models import MealPlan
+from app.database.models import MealPlan, AnalysisHistory
 from app.services.meal_planner import generate_meal_plan
-from app.services.ai_provider import get_provider
+from app.services.ai_provider import get_provider, AIProviderError
 from app.schemas.schemas import MealPlanRequest, MealPlanResponse, MealPlanUpdate
 from app.core.logging import get_logger
 
@@ -22,6 +22,8 @@ async def generate(
     provider = get_provider()
     try:
         plan = await generate_meal_plan(request, provider)
+    except (AIProviderError, HTTPException):
+        raise
     except Exception as e:
         logger.error(f"Meal plan generation error: {e}")
         raise HTTPException(status_code=500, detail=f"Meal plan generation failed: {e}")
@@ -40,6 +42,19 @@ async def generate(
         is_demo=plan.is_demo,
     )
     db.add(mp)
+
+    # Also persist to AnalysisHistory so meal plans appear in analysis history
+    history_record = AnalysisHistory(
+        analysis_id=plan.plan_id,
+        input_type="text",
+        analysis_type="meal_plan",
+        food_name=plan.title,
+        result_json=plan.model_dump_json(),
+        provider="demo" if plan.is_demo else "openai",
+        is_demo=plan.is_demo,
+    )
+    db.add(history_record)
+
     db.commit()
     return plan
 

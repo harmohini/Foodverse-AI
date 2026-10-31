@@ -26,7 +26,7 @@ def _save_upload(upload: UploadFile, subdir: str) -> Path:
     """Save an upload to a safe path and return the path."""
     ext = _safe_extension(upload.filename or "file")
     safe_name = f"{uuid.uuid4().hex}{ext}"
-    dest_dir = Path(settings.upload_dir) / subdir
+    dest_dir = settings.resolved_upload_dir / subdir
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / safe_name
     with dest.open("wb") as f:
@@ -70,7 +70,7 @@ async def validate_and_save_image(upload: UploadFile) -> Path:
     # Save
     ext2 = _safe_extension(upload.filename)
     safe_name = f"{uuid.uuid4().hex}{ext2}"
-    dest_dir = Path(settings.upload_dir) / "images"
+    dest_dir = settings.resolved_upload_dir / "images"
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / safe_name
     dest.write_bytes(contents)
@@ -94,18 +94,36 @@ async def validate_and_save_video(upload: UploadFile) -> Path:
             detail=f"Video exceeds the {settings.max_video_size_mb} MB limit.",
         )
     safe_name = f"{uuid.uuid4().hex}{ext}"
-    dest_dir = Path(settings.upload_dir) / "videos"
+    dest_dir = settings.resolved_upload_dir / "videos"
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / safe_name
     dest.write_bytes(contents)
     return dest
 
 
+async def validate_and_save_media(upload: UploadFile) -> tuple[Path, str]:
+    """Validate and save either an image or video upload. Returns (saved_path, media_type)."""
+    if not upload.filename:
+        raise HTTPException(status_code=422, detail="Filename is required.")
+    ext = _safe_extension(upload.filename)
+    if ext in ALLOWED_IMAGE_EXTENSIONS:
+        p = await validate_and_save_image(upload)
+        return p, "image"
+    if ext in ALLOWED_VIDEO_EXTENSIONS:
+        p = await validate_and_save_video(upload)
+        return p, "video"
+    allowed_all = ", ".join(sorted(ALLOWED_IMAGE_EXTENSIONS | ALLOWED_VIDEO_EXTENSIONS))
+    raise HTTPException(
+        status_code=415,
+        detail=f"Unsupported media format '{ext}'. Supported formats: {allowed_all}",
+    )
+
+
 def delete_file(path: str) -> None:
     """Safely delete an uploaded file."""
     try:
         p = Path(path)
-        if p.exists() and Path(settings.upload_dir) in p.parents:
+        if p.exists() and settings.resolved_upload_dir in p.parents:
             p.unlink()
             logger.info(f"Deleted file {p}")
     except Exception as e:
